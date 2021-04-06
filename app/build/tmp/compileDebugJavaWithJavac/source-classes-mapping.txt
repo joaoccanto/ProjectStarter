@@ -1,0 +1,6 @@
+com/example/projectstarter/BuildConfig.java
+ com.example.projectstarter.BuildConfig
+com/example/projectstarter/Features.java
+ com.example.projectstarter.Features
+com/example/projectstarter/MainActivity.java
+ com.example.projectstarter.MainActivity
