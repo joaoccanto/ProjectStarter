@@ -9,6 +9,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
 import android.view.View;
@@ -31,17 +32,20 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private static final int Request_User_Physical_Code = 1024;
     long startTime = 0;
     static double min,max,var,std, energy, zeroCrossingRate;
-    double[] values = new double[50];
-    double[] accelerometerMag = new double[50];
-    double[] gyroscopeMag = new double[50];
-    int i = 0;
+    double[] values = new double[100];
+    double[] accelerometerMag = new double[500];
+    double[] gyroscopeMag = new double[500];
+    int heartRateIndex = 0;
+    int accelerometerIndex = 0;
+    int gyroscopeIndex = 0;
     int currentTimeForHeartRate = 0;
     int currentTimeForAccelerometer = 0;
+    int currentTimeForGyroscope = 0;
     int interval = 5; // 5 seconds
-    StringBuilder heartRateData = new StringBuilder();
-    StringBuilder accelerometerData = new StringBuilder();
-    StringBuilder gyroscopeData = new StringBuilder();
-
+    StringBuilder heartRateData, accelerometerData, gyroscopeData;
+    TextView status;
+    private PowerManager.WakeLock wl;
+    String TAG = "tag";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -50,15 +54,44 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         if((ContextCompat.checkSelfPermission(this,
                 Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_DENIED) ||
                 (ContextCompat.checkSelfPermission(this,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED)){
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) ||
+                (ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.WAKE_LOCK) == PackageManager.PERMISSION_DENIED)){
             //ask for permission
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 requestPermissions(new String[]{Manifest.permission.BODY_SENSORS, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE}, Request_User_Physical_Code);
             }
         }
 
+        PowerManager pm =  (PowerManager)getSystemService(Context.POWER_SERVICE);
+        wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
 
-        mTextView = (TextView) findViewById(R.id.text);
+        //mTextView = (TextView) findViewById(R.id.status_text_view);
+        status = (TextView)findViewById(R.id.status_text_view);
+
+        // Enables Always-on
+        setAmbientEnabled();
+    }
+
+    public void onStopClick(View view) {
+        wl.release();
+        status.setText("NOT RECORDING");
+        sensorManager.unregisterListener(this);
+        writeDataToFile(heartRateData, "heart_rate.csv");
+        writeDataToFile(accelerometerData, "accelerometer.csv");
+        writeDataToFile(gyroscopeData, "gyroscope.csv");
+
+    }
+
+    public void onStartClick(View view) {
+        wl.acquire();
+        startTime = System.currentTimeMillis();
+        status.setText("RECORDING");
+
+        heartRateData = new StringBuilder();
+         accelerometerData = new StringBuilder();
+         gyroscopeData = new StringBuilder();
+
         sensorManager = (SensorManager)  getSystemService(Context.SENSOR_SERVICE);
 
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE);
@@ -68,22 +101,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         sensorManager.registerListener(MainActivity.this, heartRateSensor ,sensorManager.SENSOR_DELAY_NORMAL);
         sensorManager.registerListener(MainActivity.this, accelerometer ,sensorManager.SENSOR_DELAY_NORMAL);
         sensorManager.registerListener(MainActivity.this, gyroscope ,sensorManager.SENSOR_DELAY_NORMAL);
-
-        Log.d("JOAO 1", heartRateSensor.toString());
-        startTime = System.currentTimeMillis();
-
-
-        // Enables Always-on
-        setAmbientEnabled();
     }
-
-    public void onStopClick(View view) {
-        sensorManager.unregisterListener(this);
-        writeDataToFile(heartRateData, "heart_rate.csv");
-        writeDataToFile(accelerometerData, "accelerometer.csv");
-        writeDataToFile(gyroscopeData, "gyroscope.csv");
-    }
-
     private void writeDataToFile(StringBuilder dataToWrite, String fileName) {
 
         Context context = getApplicationContext();
@@ -101,7 +119,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         long millis = System.currentTimeMillis() - startTime;
         int seconds = (int) (millis / 1000);
 
-        if ((seconds % interval == 0 && currentTimeForHeartRate != seconds) || i == 50 ){
+        if ((seconds % interval == 0 && currentTimeForHeartRate != seconds) || heartRateIndex == 100 ){
 
             currentTimeForHeartRate = seconds;
             min = Features.minimum(values);
@@ -114,11 +132,11 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
             String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
             heartRateData.append(timeStamp + "," +String.valueOf(min) + "," + String.valueOf(max) + "," + String.valueOf(var) + "," + String.valueOf(std) + "," + String.valueOf(energy) + "," + String.valueOf(zeroCrossingRate) + "\n");
-            Log.d("JOAO - HR", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
-            i = 0;
+            Log.d("JOAO1 - HR", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
+            heartRateIndex = 0;
         } else {
-            values[i] = event.values[0];
-            i++;
+            values[heartRateIndex] = event.values[0];
+            heartRateIndex++;
         }
     }
 
@@ -128,7 +146,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         long millis = System.currentTimeMillis() - startTime;
         int seconds = (int) (millis / 1000);
 
-        if ((seconds % interval == 0 && currentTimeForAccelerometer != seconds) || i == 50 ){
+        Log.d("ACC", "  " + currentTimeForAccelerometer + "  " + seconds + "  " + accelerometerIndex + event.sensor.getName());
+        if ((seconds % interval == 0 && currentTimeForAccelerometer != seconds) || accelerometerIndex == 500 ){
             currentTimeForAccelerometer = seconds;
             min = Features.minimum(accelerometerMag);
             max = Features.maximum(accelerometerMag);
@@ -140,22 +159,23 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
             String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
             accelerometerData.append(timeStamp + "," +String.valueOf(min) + "," + String.valueOf(max) + "," + String.valueOf(var) + "," + String.valueOf(std) + "," + String.valueOf(energy) + "," + String.valueOf(zeroCrossingRate) + "\n");
-            Log.d("JOAO - ACC", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
-            i = 0;
+            Log.d("ACC - ", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
+            accelerometerIndex = 0;
         } else {
-            accelerometerMag[i] = magnitude;
-            i++;
+            accelerometerMag[accelerometerIndex] = magnitude;
+            accelerometerIndex++;
         }
     }
     private void onGyroscopeChanged(SensorEvent event) {
-        Log.d("JOAO - GY", " "+ event.values.length);
         double magnitude = Features.magnitude(event.values[0], event.values[1], event.values[2]);
 
         long millis = System.currentTimeMillis() - startTime;
         int seconds = (int) (millis / 1000);
 
-        if ((seconds % interval == 0 && currentTimeForAccelerometer != seconds) || i == 50 ){
-            currentTimeForAccelerometer = seconds;
+        Log.d("GYR", "  " + currentTimeForGyroscope + "  " + seconds + "  " + gyroscopeIndex + event.sensor.getName());
+
+        if ((seconds % interval == 0 && currentTimeForGyroscope != seconds) || gyroscopeIndex == 500 ){
+            currentTimeForGyroscope = seconds;
             min = Features.minimum(gyroscopeMag);
             max = Features.maximum(gyroscopeMag);
             var = Features.variance(gyroscopeMag);
@@ -166,16 +186,16 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
             String timeStamp = new SimpleDateFormat("yyyy.MM.dd.HH.mm.ss").format(new Date());
             gyroscopeData.append(timeStamp + "," +String.valueOf(min) + "," + String.valueOf(max) + "," + String.valueOf(var) + "," + String.valueOf(std) + "," + String.valueOf(energy) + "," + String.valueOf(zeroCrossingRate) + "\n");
-            Log.d("JOAO - ACC", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
-            i = 0;
+            Log.d("JOAO1 - GYR", " " + timeStamp + " " + min + " " + max + " " + var + " " + std + " " + energy + " " + zeroCrossingRate);
+            gyroscopeIndex = 0;
         } else {
-            gyroscopeMag[i] = magnitude;
-            i++;
+            gyroscopeMag[gyroscopeIndex] = magnitude;
+            gyroscopeIndex++;
         }
     }
     @Override
     public void onSensorChanged(SensorEvent event) {
-        Log.d("JOAO", event.sensor.getName());
+        //Log.d("JOAO - SENSOR", event.sensor.getName());
         String sensorName = event.sensor.getName();
 
         switch (sensorName){
@@ -184,8 +204,10 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                 break;
             case "BMI120 Accelerometer Non-wakeup":
                 onAccelerometerChanged(event);
+                break;
             case "BMI120 Gyroscope Non-wakeup":
                 onGyroscopeChanged(event);
+                break;
             default:
                 //do nothing
         }

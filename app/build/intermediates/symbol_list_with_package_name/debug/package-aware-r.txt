@@ -1317,6 +1317,7 @@ id fill_vertical
 id fit
 id forever
 id fragment_container_view_tag
+id frameLayout
 id gone
 id group_divider
 id height
@@ -1400,7 +1401,9 @@ id src_in
 id src_over
 id standard
 id start
+id start_button
 id status_bar_latest_event_content
+id status_text_view
 id stop_button
 id submenuarrow
 id submit_area
